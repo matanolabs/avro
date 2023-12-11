@@ -190,6 +190,35 @@ impl<'a, W: Write> Writer<'a, W> {
         }
     }
 
+    pub fn append_value_ref_validated(&mut self, value: &Value) -> AvroResult<usize> {
+        let n = self.maybe_write_header()?;
+
+        // Lazy init for users using the builder pattern with error throwing
+        match self.resolved_schema {
+            Some(ref rs) => {
+                encode_internal(
+                    value,
+                    self.schema,
+                    rs.get_names(),
+                    &self.schema.namespace(),
+                    &mut self.buffer,
+                )?;
+                self.num_values += 1;
+
+                if self.buffer.len() >= self.block_size {
+                    return self.flush().map(|b| b + n);
+                }
+
+                Ok(n)
+            }
+            None => {
+                let rs = ResolvedSchema::try_from(self.schema)?;
+                self.resolved_schema = Some(rs);
+                self.append_value_ref(value)
+            }
+        }
+    }
+
     /// Append anything implementing the `Serialize` trait to a `Writer` for
     /// [`serde`](https://docs.serde.rs/serde/index.html) compatibility, also performing schema
     /// validation.
